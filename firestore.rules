@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Check if user is an admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Check if the request is from the same authenticated user
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Categories are readable by any authenticated user, writable only by admins
+    match /categories/{categoryId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // User documents and their expenses
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Expense subcollection
+      match /expenses/{expenseId} {
+        // Users can only read/write their own expenses
+        allow read, delete: if isOwner(userId);
+
+        // Detailed validation for creating/updating expenses
+        allow create, update: if isOwner(userId)
+          && request.resource.data.title is string
+          && request.resource.data.amountToman is number
+          && request.resource.data.amountToman > 0
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryNameSnapshot is string
+          // Ensure clients don't set createdAt in the future and updatedAt is current time
+          && request.resource.data.updatedAt == request.time;
+      }
+    }
+  }
+}
